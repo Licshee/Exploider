@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
 using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace Exploider.Controllers
 {
+    using Microsoft.AspNetCore.Mvc;
+
     public class HomeController : Controller
     {
         public IActionResult Index()
@@ -28,6 +30,9 @@ namespace Exploider.Controllers
             return View();
         }
 
+        const string TypeTokenCharacterPattern = @"-!#-'*+.\w^`|~"; // !#$%&'*+-.0-9A-Z^_`a-z|~
+        const string TypeTokenPartPattern = "[" + TypeTokenCharacterPattern + "]+";
+        const string TypeTokenPattern = "^" + TypeTokenPartPattern + "/" + TypeTokenPartPattern + "$";
         public IActionResult Data()
         {
             var query = Request.QueryString.Value;
@@ -46,50 +51,35 @@ namespace Exploider.Controllers
             var parts = type.Split(';');
             var partCount = parts.Length;
 
-            var isBase64 = false;
+            var isBase64 = "base64".Equals(parts[partCount - 1].Trim(), StringComparison.OrdinalIgnoreCase);
+            if (isBase64)
+                partCount--;
+
             var charset = "US-ASCII";
 
             switch (partCount)
             {
                 case 1:
                     type = parts[0].Trim();
-                    if (string.IsNullOrWhiteSpace(type))
+                    if (type.Length == 0)
                         type = "text/plain";
                     break;
                 case 2:
-                    type = parts[1].Trim();
-                    if (type.Length == 0)
+                    charset = parts[1].Trim();
+                    if (!charset.StartsWith("charset=", StringComparison.OrdinalIgnoreCase))
                         return BadRequest();
-
-                    if (type.Equals("base64", StringComparison.OrdinalIgnoreCase))
-                    {
-                        isBase64 = true;
-                        goto case 1;
-                    }
-
-                    charset = type;
-                    if (!charset.StartsWith("charset", StringComparison.OrdinalIgnoreCase))
-                        return BadRequest();
-
-                    charset = charset.Substring(7).TrimStart();
-                    if (charset.Length == 0 || charset[0] != '=')
-                        return BadRequest();
-
-                    charset = charset.Substring(1).TrimStart();
-                    if (charset.Length == 0)
-                        return BadRequest();
-
-                    type = parts[0].Trim();
-                    if (string.IsNullOrWhiteSpace(type))
-                        return BadRequest(); // improperable
-                    break;
+                    charset = charset.Substring(8);
+                    goto case 1;
                 default:
                     return BadRequest();
             }
 
-            if (isBase64)
-                return File(Convert.FromBase64String(data), type + ";charset=" + charset);
-            return Content(data, type, Encoding.GetEncoding(charset));
+            if (!Regex.IsMatch(type, TypeTokenPattern))
+                return BadRequest();
+
+            if (!isBase64)
+                return Content(query, type, Encoding.GetEncoding(charset));
+            return File(Convert.FromBase64String(data), type + ";charset=" + charset);
         }
 
         public IActionResult Error()
